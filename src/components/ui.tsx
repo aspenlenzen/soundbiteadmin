@@ -18,6 +18,28 @@ export function LevelBadge({ rating }: { rating: number }) {
   );
 }
 
+export function TierBadge({ tier }: { tier: string | null | undefined }) {
+  const key = (tier ?? '').trim().toLowerCase();
+  if (!key) return <span className="text-gray-300">—</span>;
+  if (key === 'pro') {
+    return (
+      <span
+        className="inline-flex items-center gap-1.5 rounded-full py-1 pr-2.5 pl-2 text-xs font-semibold"
+        style={{ backgroundColor: tint('#D4A017', 18), color: '#8A6400' }}
+      >
+        <span className="h-2 w-2 rounded-full" style={{ backgroundColor: '#D4A017' }} />
+        Pro
+      </span>
+    );
+  }
+  // 'free' and any other/unknown tier render as a subtle gray pill.
+  return (
+    <span className="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-500 capitalize">
+      {key}
+    </span>
+  );
+}
+
 export function StatTile({ label, value, sub }: { label: string; value: ReactNode; sub?: string }) {
   return (
     <div className="rounded-2xl border border-gray-200 bg-white p-4">

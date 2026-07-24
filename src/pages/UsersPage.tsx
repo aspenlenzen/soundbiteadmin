@@ -4,7 +4,7 @@ import { useAuth } from '../context/auth';
 import { ADMIN_USER_IDS } from '../lib/config';
 import { TAGS, tagLabel } from '../lib/levels';
 import { formatInTz } from '../lib/datetime';
-import { LevelBadge, StatTile, useToast, type Toast } from '../components/ui';
+import { LevelBadge, StatTile, TierBadge, useToast, type Toast } from '../components/ui';
 
 type ProfileRow = {
   id: string;
@@ -14,6 +14,7 @@ type ProfileRow = {
   avatar_url: string | null;
   rating_count: number;
   important_tags: string[] | null;
+  subscription_tier: string | null;
   created_at: string;
 };
 
@@ -63,6 +64,7 @@ function EditUserModal({
   const [username, setUsername] = useState(row.username ?? '');
   const [email, setEmail] = useState(row.email ?? '');
   const [avatarUrl, setAvatarUrl] = useState(row.avatar_url ?? '');
+  const [tier, setTier] = useState((row.subscription_tier ?? 'free').toLowerCase());
   const [importantTags, setImportantTags] = useState<string[]>(row.important_tags ?? []);
   const [customTag, setCustomTag] = useState('');
   const [busy, setBusy] = useState(false);
@@ -93,6 +95,7 @@ function EditUserModal({
       username: username.trim() || null,
       email: email.trim() || null,
       avatar_url: avatarUrl.trim() || null,
+      subscription_tier: tier,
       important_tags: importantTags.length ? importantTags : null,
     };
     const { data, error } = await supabase
@@ -175,6 +178,30 @@ function EditUserModal({
             Avatar URL
             <input value={avatarUrl} disabled={disabled} onChange={(e) => setAvatarUrl(e.target.value)} className={field} />
           </label>
+          <div>
+            <p className="text-sm font-semibold text-gray-700">Membership tier</p>
+            <p className="mt-0.5 text-[11px] text-gray-400">
+              Sets the user's tier directly — Pro unlocks the app's paid features.
+            </p>
+            <div className="mt-2 inline-flex rounded-lg border border-gray-200 p-0.5">
+              {['free', 'pro'].map((t) => {
+                const on = tier === t;
+                return (
+                  <button
+                    key={t}
+                    type="button"
+                    disabled={disabled}
+                    onClick={() => setTier(t)}
+                    className={`rounded-md px-6 py-1.5 text-sm font-semibold capitalize transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                      on ? 'bg-[var(--accent)] text-white' : 'text-gray-500 hover:bg-gray-100'
+                    }`}
+                  >
+                    {t}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
           <div>
             <p className="text-sm font-semibold text-gray-700">Important tags</p>
             <p className="mt-0.5 text-[11px] text-gray-400">
@@ -259,7 +286,7 @@ export default function UsersPage() {
     const [profiles, ratingRows] = await Promise.all([
       supabase
         .from('user db')
-        .select('id, username, display_name, email, avatar_url, rating_count, important_tags, created_at')
+        .select('id, username, display_name, email, avatar_url, rating_count, important_tags, subscription_tier, created_at')
         .order('created_at')
         .limit(1000),
       supabase.from('Ratings db').select('user_id, sound_rating, created_at').limit(1000),
@@ -340,6 +367,7 @@ export default function UsersPage() {
             <tr className="border-b border-gray-100 text-xs font-semibold text-gray-500">
               <th className="px-4 py-3">User</th>
               <th className="px-4 py-3">Email</th>
+              <th className="px-4 py-3">Tier</th>
               <th className="px-4 py-3">Sound Bites</th>
               <th className="px-4 py-3">Avg level</th>
               <th className="px-4 py-3">Last bite</th>
@@ -372,6 +400,9 @@ export default function UsersPage() {
                   </td>
                   <td className="px-4 py-3 whitespace-nowrap text-gray-600">
                     {r.email ?? <span className="text-gray-300">—</span>}
+                  </td>
+                  <td className="px-4 py-3 whitespace-nowrap">
+                    <TierBadge tier={r.subscription_tier} />
                   </td>
                   <td className="px-4 py-3 font-medium">{r.rating_count}</td>
                   <td className="px-4 py-3 whitespace-nowrap">
