@@ -212,7 +212,7 @@ function Shell() {
         </p>
       </aside>
 
-      <div className="ml-56 flex-1">
+      <div className="ml-56 min-w-0 flex-1">
         <header className="sticky top-0 z-40 flex items-center justify-between border-b border-gray-200 bg-white/90 px-8 py-3.5 backdrop-blur">
           <h1 className="text-lg font-bold">{current.title}</h1>
           <AuthChip />

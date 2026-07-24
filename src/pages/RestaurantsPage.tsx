@@ -316,7 +316,207 @@ function EditRestaurantModal({
   );
 }
 
+function AddRestaurantModal({
+  onClose,
+  onCreated,
+  toast,
+}: {
+  onClose: () => void;
+  onCreated: () => void;
+  toast: (t: Toast) => void;
+}) {
+  const { session } = useAuth();
+  const isAdmin = !!session && ADMIN_USER_IDS.has(session.user.id);
+
+  const [name, setName] = useState('');
+  const [estType, setEstType] = useState('');
+  const [street, setStreet] = useState('');
+  const [city, setCity] = useState('');
+  const [stateVal, setStateVal] = useState('');
+  const [postal, setPostal] = useState('');
+  const [website, setWebsite] = useState('');
+  const [phone, setPhone] = useState('');
+  const [mapsUri, setMapsUri] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  const disabled = !isAdmin || busy;
+
+  const composedAddress =
+    [street.trim(), city.trim(), [stateVal.trim(), postal.trim()].filter(Boolean).join(' ')]
+      .filter(Boolean)
+      .join(', ') || null;
+
+  const canSave = isAdmin && !!name.trim() && !busy;
+
+  const create = async () => {
+    setBusy(true);
+    // Manually-added restaurants have no Google Place ID, so mint a synthetic
+    // unique key (the column is the primary key and required). The "manual-"
+    // prefix keeps it clearly distinct from Google's "ChIJ…" ids.
+    const id = `manual-${crypto.randomUUID()}`;
+    const { data, error } = await supabase
+      .from('Restaurants db')
+      .insert({
+        google_place_id: id,
+        restaurant_name: name.trim() || null,
+        establishment_type: estType.trim() || null,
+        street_address: street.trim() || null,
+        city: city.trim() || null,
+        state: stateVal.trim() || null,
+        postal_code: postal.trim() || null,
+        full_address: composedAddress,
+        google_website: website.trim() || null,
+        google_phone_number: phone.trim() || null,
+        google_maps_uri: mapsUri.trim() || null,
+        source: 'manual',
+      })
+      .select('google_place_id');
+    setBusy(false);
+    if (error) {
+      toast({ kind: 'err', msg: `Add failed: ${error.message}` });
+    } else if (!data?.length) {
+      toast({ kind: 'err', msg: 'Add blocked — only the admin account can add restaurants.' });
+    } else {
+      toast({ kind: 'ok', msg: `${name.trim() || 'Restaurant'} added.` });
+      onCreated();
+      onClose();
+    }
+  };
+
+  const field =
+    'mt-1.5 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm font-normal focus:border-[var(--accent)] focus:outline-none disabled:bg-gray-50';
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      onClick={onClose}
+    >
+      <div
+        className="max-h-[92vh] w-full max-w-xl overflow-y-auto rounded-2xl bg-white shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="border-b border-gray-100 px-6 py-4">
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              <h2 className="text-lg font-bold">Add a restaurant</h2>
+              <p className="mt-0.5 text-xs text-gray-500">
+                Creates a manual entry (no Google data). Sound Bites can then be posted here.
+              </p>
+            </div>
+            <button
+              onClick={onClose}
+              aria-label="Close"
+              className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100"
+            >
+              <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
+            </button>
+          </div>
+          {!isAdmin && (
+            <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              Read-only — only the admin account can add restaurants.
+            </p>
+          )}
+        </div>
+
+        <div className="space-y-4 px-6 py-5">
+          <div className="grid grid-cols-2 gap-4">
+            <label className="block text-sm font-semibold text-gray-700">
+              Name
+              <input
+                value={name}
+                disabled={disabled}
+                autoFocus
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Restaurant name"
+                className={field}
+              />
+            </label>
+            <label className="block text-sm font-semibold text-gray-700">
+              Establishment type
+              <input
+                value={estType}
+                disabled={disabled}
+                onChange={(e) => setEstType(e.target.value)}
+                placeholder="e.g. Italian restaurant"
+                className={field}
+              />
+            </label>
+          </div>
+          <label className="block text-sm font-semibold text-gray-700">
+            Street address
+            <input value={street} disabled={disabled} onChange={(e) => setStreet(e.target.value)} className={field} />
+          </label>
+          <div className="grid grid-cols-3 gap-4">
+            <label className="block text-sm font-semibold text-gray-700">
+              City
+              <input value={city} disabled={disabled} onChange={(e) => setCity(e.target.value)} className={field} />
+            </label>
+            <label className="block text-sm font-semibold text-gray-700">
+              State
+              <input value={stateVal} disabled={disabled} onChange={(e) => setStateVal(e.target.value)} className={field} />
+            </label>
+            <label className="block text-sm font-semibold text-gray-700">
+              Postal code
+              <input value={postal} disabled={disabled} onChange={(e) => setPostal(e.target.value)} className={field} />
+            </label>
+          </div>
+          {composedAddress && (
+            <p className="text-[11px] text-gray-400">Full address will be saved as: {composedAddress}</p>
+          )}
+          <div className="grid grid-cols-2 gap-4">
+            <label className="block text-sm font-semibold text-gray-700">
+              Website
+              <input value={website} disabled={disabled} onChange={(e) => setWebsite(e.target.value)} className={field} />
+            </label>
+            <label className="block text-sm font-semibold text-gray-700">
+              Phone
+              <input value={phone} disabled={disabled} onChange={(e) => setPhone(e.target.value)} className={field} />
+            </label>
+          </div>
+          <label className="block text-sm font-semibold text-gray-700">
+            Google Maps URL
+            <input
+              value={mapsUri}
+              disabled={disabled}
+              onChange={(e) => setMapsUri(e.target.value)}
+              placeholder="Optional — enables the ↗ Maps link"
+              className={field}
+            />
+          </label>
+        </div>
+
+        <div className="flex items-center justify-end gap-2 border-t border-gray-100 px-6 py-4">
+          <button
+            onClick={onClose}
+            className="rounded-lg px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={create}
+            disabled={!canSave}
+            title={!name.trim() ? 'Enter a name first' : undefined}
+            className="rounded-lg bg-[var(--accent)] px-4 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50"
+          >
+            {busy ? 'Adding…' : 'Add restaurant'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function RestaurantsPage() {
+  const { session } = useAuth();
+  const isAdmin = !!session && ADMIN_USER_IDS.has(session.user.id);
   const [rows, setRows] = useState<RestaurantRow[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
@@ -326,6 +526,7 @@ export default function RestaurantsPage() {
   const [levelFilter, setLevelFilter] = useState('');
   const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({ key: 'bites', dir: -1 });
   const [editing, setEditing] = useState<RestaurantRow | null>(null);
+  const [adding, setAdding] = useState(false);
   const { show: showToast, node: toastNode } = useToast();
 
   const load = useCallback(async () => {
@@ -556,6 +757,14 @@ export default function RestaurantsPage() {
           <span className="text-xs text-gray-400">
             {visible.length} of {rows.length}
           </span>
+          {isAdmin && (
+            <button
+              onClick={() => setAdding(true)}
+              className="rounded-lg bg-[var(--accent)] px-3 py-2 text-sm font-semibold text-white hover:opacity-90"
+            >
+              + Add restaurant
+            </button>
+          )}
           <button
             onClick={exportCsv}
             className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50"
@@ -668,6 +877,14 @@ export default function RestaurantsPage() {
           row={editing}
           onClose={() => setEditing(null)}
           onChanged={load}
+          toast={showToast}
+        />
+      )}
+
+      {adding && (
+        <AddRestaurantModal
+          onClose={() => setAdding(false)}
+          onCreated={load}
           toast={showToast}
         />
       )}

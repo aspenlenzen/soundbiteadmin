@@ -502,8 +502,345 @@ function EditModal({
   );
 }
 
+function AddRatingModal({
+  restaurants,
+  onClose,
+  onCreated,
+  toast,
+}: {
+  restaurants: RestaurantOption[] | null;
+  onClose: () => void;
+  onCreated: () => void;
+  toast: (t: Toast) => void;
+}) {
+  const { session, profileFor, profiles } = useAuth();
+  const isAdmin = !!session && ADMIN_USER_IDS.has(session.user.id);
+  const browserTz = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone || null, []);
+
+  const [level, setLevel] = useState(4);
+  const [placeId, setPlaceId] = useState('');
+  const [placeQuery, setPlaceQuery] = useState('');
+  const [placeOpen, setPlaceOpen] = useState(false);
+  const [userId, setUserId] = useState(session?.user.id ?? '');
+  const [room, setRoom] = useState('');
+  const [tags, setTags] = useState<string[]>([]);
+  const [customTag, setCustomTag] = useState('');
+  const [comment, setComment] = useState('');
+  const [when, setWhen] = useState(() => toDatetimeLocal(new Date().toISOString(), browserTz));
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  const toggleTag = (tag: string) =>
+    setTags((t) => (t.includes(tag) ? t.filter((x) => x !== tag) : [...t, tag]));
+
+  const addCustomTag = () => {
+    const t = customTag.trim();
+    if (t && !tags.includes(t)) setTags((prev) => [...prev, t]);
+    setCustomTag('');
+  };
+
+  const selectedPlace = useMemo(
+    () => restaurants?.find((r) => r.google_place_id === placeId),
+    [restaurants, placeId],
+  );
+
+  const placeMatches = useMemo(() => {
+    if (!restaurants) return [];
+    const q = placeQuery.trim().toLowerCase();
+    const list = q
+      ? restaurants.filter(
+          (r) =>
+            (r.restaurant_name ?? '').toLowerCase().includes(q) ||
+            (r.city ?? '').toLowerCase().includes(q),
+        )
+      : restaurants;
+    return list.slice(0, 8);
+  }, [restaurants, placeQuery]);
+
+  const profileList = useMemo(() => {
+    const list = [...profiles.values()].sort((a, b) =>
+      (a.display_name ?? a.username ?? '').localeCompare(b.display_name ?? b.username ?? ''),
+    );
+    if (userId && !profiles.has(userId)) {
+      list.push({ id: userId, username: null, display_name: `${userId.slice(0, 8)}…` });
+    }
+    return list;
+  }, [profiles, userId]);
+
+  const selfName = session
+    ? profileFor(session.user.id)?.display_name || session.user.email
+    : null;
+
+  const canSave = !!session && !!placeId && !!userId && !busy;
+
+  const create = async () => {
+    if (!session) return;
+    setBusy(true);
+    const row = {
+      google_place_id: placeId,
+      sound_rating: level,
+      user_id: userId,
+      room: room || null,
+      tags: tags.length ? tags : null,
+      comment: comment.trim() || null,
+      rated_datetime: when ? fromDatetimeLocal(when, browserTz) : null,
+      rated_timezone: browserTz,
+    };
+    const { data, error } = await supabase.from('Ratings db').insert(row).select('id');
+    setBusy(false);
+    if (error) {
+      toast({ kind: 'err', msg: `Add failed: ${error.message}` });
+    } else if (!data?.length) {
+      toast({ kind: 'err', msg: 'Add blocked — check that you are signed in with permission to post.' });
+    } else {
+      toast({ kind: 'ok', msg: `Sound Bite #${data[0].id} added.` });
+      onCreated();
+      onClose();
+    }
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      onClick={onClose}
+    >
+      <div
+        className="max-h-[92vh] w-full max-w-xl overflow-y-auto rounded-2xl bg-white shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="border-b border-gray-100 px-6 py-4">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h2 className="text-lg font-bold">Add a Sound Bite</h2>
+              <p className="mt-0.5 text-xs text-gray-500">
+                {session
+                  ? `Posting as ${selfName}`
+                  : 'Sign in (top right) to add a Sound Bite.'}
+              </p>
+            </div>
+            <button
+              onClick={onClose}
+              aria-label="Close"
+              className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100"
+            >
+              <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
+            </button>
+          </div>
+          {!session && (
+            <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              Read-only — sign in (top right) to add a Sound Bite.
+            </p>
+          )}
+        </div>
+
+        <div className="space-y-5 px-6 py-5">
+          <div>
+            <p className="text-sm font-semibold text-gray-700">Restaurant</p>
+            <div className="relative mt-1.5">
+              <input
+                value={placeQuery}
+                disabled={!session || !restaurants}
+                placeholder={restaurants ? 'Search restaurants…' : 'Loading restaurants…'}
+                onChange={(e) => {
+                  setPlaceQuery(e.target.value);
+                  setPlaceOpen(true);
+                  setPlaceId('');
+                }}
+                onFocus={(e) => {
+                  setPlaceOpen(true);
+                  e.target.select();
+                }}
+                onBlur={() =>
+                  window.setTimeout(() => {
+                    setPlaceOpen(false);
+                    setPlaceQuery(selectedPlace?.restaurant_name ?? '');
+                  }, 150)
+                }
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-[var(--accent)] focus:outline-none disabled:bg-gray-50"
+              />
+              {placeOpen && session && restaurants && (
+                <ul className="absolute z-10 mt-1 max-h-56 w-full overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg">
+                  {placeMatches.map((r) => (
+                    <li key={r.google_place_id}>
+                      <button
+                        type="button"
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          setPlaceId(r.google_place_id);
+                          setPlaceQuery(r.restaurant_name ?? '');
+                          setPlaceOpen(false);
+                        }}
+                        className={`flex w-full items-baseline justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-gray-50 ${
+                          r.google_place_id === placeId ? 'bg-blue-50' : ''
+                        }`}
+                      >
+                        <span className="truncate font-medium">{r.restaurant_name ?? 'Unnamed'}</span>
+                        <span className="shrink-0 text-xs text-gray-400">{r.city ?? ''}</span>
+                      </button>
+                    </li>
+                  ))}
+                  {placeMatches.length === 0 && (
+                    <li className="px-3 py-2 text-xs text-gray-400">No restaurants match</li>
+                  )}
+                </ul>
+              )}
+            </div>
+            <p className="mt-1 text-[11px] text-gray-400">
+              Only existing restaurants can be chosen — add a new one on the Restaurants page first.
+            </p>
+          </div>
+
+          <div>
+            <p className="text-sm font-semibold text-gray-700">Sound level</p>
+            <div className="mt-3">
+              <SoundLevelSlider value={level} onChange={setLevel} disabled={!session} />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <label className="block text-sm font-semibold text-gray-700">
+              Room
+              <select
+                value={room}
+                disabled={!session}
+                onChange={(e) => setRoom(e.target.value)}
+                className="mt-1.5 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-normal focus:border-[var(--accent)] focus:outline-none disabled:bg-gray-50"
+              >
+                <option value="">Not specified</option>
+                {APP_ROOMS.map((r) => (
+                  <option key={r} value={r}>{r}</option>
+                ))}
+                <optgroup label="Legacy values">
+                  {LEGACY_ROOMS.map((r) => (
+                    <option key={r} value={r}>{r}</option>
+                  ))}
+                </optgroup>
+              </select>
+            </label>
+            <label className="block text-sm font-semibold text-gray-700">
+              Rated at
+              <input
+                type="datetime-local"
+                value={when}
+                disabled={!session}
+                onChange={(e) => setWhen(e.target.value)}
+                className="mt-1.5 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm font-normal focus:border-[var(--accent)] focus:outline-none disabled:bg-gray-50"
+              />
+              <span className="mt-1 block text-[11px] font-normal text-gray-400">
+                {browserTz ? `Saved in ${browserTz}` : 'Saved in your local time'}
+              </span>
+            </label>
+            <label className="block text-sm font-semibold text-gray-700">
+              Posted by
+              <select
+                value={userId}
+                disabled={!session || !isAdmin}
+                onChange={(e) => setUserId(e.target.value)}
+                className="mt-1.5 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-normal focus:border-[var(--accent)] focus:outline-none disabled:bg-gray-50"
+              >
+                {profileList.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.display_name || p.username || `${p.id.slice(0, 8)}…`}
+                  </option>
+                ))}
+              </select>
+              {session && !isAdmin && (
+                <span className="mt-1 block text-[11px] font-normal text-gray-400">
+                  Only the admin account can post as another user.
+                </span>
+              )}
+            </label>
+          </div>
+
+          <div>
+            <p className="text-sm font-semibold text-gray-700">Tags</p>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {[...TAGS, ...tags.filter((t) => !TAGS.includes(t))].map((tag) => {
+                const on = tags.includes(tag);
+                return (
+                  <button
+                    key={tag}
+                    disabled={!session}
+                    onClick={() => toggleTag(tag)}
+                    className={`rounded-full border px-2.5 py-1 text-xs font-medium disabled:cursor-not-allowed ${
+                      on
+                        ? 'border-[var(--accent)] bg-blue-50 text-[var(--accent)]'
+                        : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
+                    }`}
+                  >
+                    {tagLabel(tag)}
+                    {on && <span className="ml-1">✕</span>}
+                  </button>
+                );
+              })}
+            </div>
+            {session && (
+              <div className="mt-2 flex gap-2">
+                <input
+                  value={customTag}
+                  onChange={(e) => setCustomTag(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      addCustomTag();
+                    }
+                  }}
+                  placeholder="Add a custom tag…"
+                  className="w-48 rounded-lg border border-gray-300 px-3 py-1.5 text-xs focus:border-[var(--accent)] focus:outline-none"
+                />
+                <button
+                  onClick={addCustomTag}
+                  className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50"
+                >
+                  Add
+                </button>
+              </div>
+            )}
+          </div>
+
+          <label className="block text-sm font-semibold text-gray-700">
+            Comment
+            <textarea
+              value={comment}
+              disabled={!session}
+              onChange={(e) => setComment(e.target.value)}
+              rows={3}
+              placeholder="Optional"
+              className="mt-1.5 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm font-normal focus:border-[var(--accent)] focus:outline-none disabled:bg-gray-50"
+            />
+          </label>
+        </div>
+
+        <div className="flex items-center justify-end gap-2 border-t border-gray-100 px-6 py-4">
+          <button
+            onClick={onClose}
+            className="rounded-lg px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={create}
+            disabled={!canSave}
+            title={!placeId ? 'Choose a restaurant first' : undefined}
+            className="rounded-lg bg-[var(--accent)] px-4 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50"
+          >
+            {busy ? 'Adding…' : 'Add Sound Bite'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function RatingsPage() {
-  const { profileFor } = useAuth();
+  const { profileFor, session } = useAuth();
   const [ratings, setRatings] = useState<Rating[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
@@ -515,6 +852,7 @@ export default function RatingsPage() {
   const [levelFilter, setLevelFilter] = useState<Set<number>>(new Set());
   const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({ key: 'rated', dir: -1 });
   const [editing, setEditing] = useState<Rating | null>(null);
+  const [adding, setAdding] = useState(false);
   const { show: showToast, node: toastNode } = useToast();
   const [restaurants, setRestaurants] = useState<RestaurantOption[] | null>(null);
 
@@ -813,6 +1151,14 @@ export default function RatingsPage() {
           <span className="text-xs text-gray-400">
             {visible.length} of {ratings.length}
           </span>
+          {session && (
+            <button
+              onClick={() => setAdding(true)}
+              className="rounded-lg bg-[var(--accent)] px-3 py-2 text-sm font-semibold text-white hover:opacity-90"
+            >
+              + Add Sound Bite
+            </button>
+          )}
           <button
             onClick={exportCsv}
             className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50"
@@ -832,8 +1178,8 @@ export default function RatingsPage() {
         <table className="w-full text-left text-sm">
           <thead>
             <tr className="border-b border-gray-100 text-xs font-semibold text-gray-500">
-              <th className="px-4 py-3">{headerBtn('rated', 'Rated')}</th>
-              <th className="px-4 py-3">{headerBtn('restaurant', 'Restaurant')}</th>
+              <th className="sticky left-0 z-20 w-[14rem] min-w-[14rem] max-w-[14rem] bg-white px-4 py-3">{headerBtn('rated', 'Rated')}</th>
+              <th className="sticky left-[14rem] z-20 w-[13rem] min-w-[13rem] max-w-[13rem] border-r border-gray-200 bg-white px-4 py-3 shadow-[6px_0_8px_-6px_rgba(0,0,0,0.10)]">{headerBtn('restaurant', 'Restaurant')}</th>
               <th className="px-4 py-3">{headerBtn('level', 'Level')}</th>
               <th className="px-4 py-3">Room</th>
               <th className="px-4 py-3">Tags</th>
@@ -847,9 +1193,9 @@ export default function RatingsPage() {
               <tr
                 key={r.id}
                 onClick={() => setEditing(r)}
-                className="cursor-pointer border-b border-gray-50 last:border-0 hover:bg-gray-50"
+                className="group cursor-pointer border-b border-gray-50 last:border-0 hover:bg-gray-50"
               >
-                <td className="px-4 py-3 whitespace-nowrap">
+                <td className="sticky left-0 z-10 w-[14rem] min-w-[14rem] max-w-[14rem] bg-white px-4 py-3 whitespace-nowrap group-hover:bg-gray-50">
                   <p className="font-medium">
                     {r.rated_datetime
                       ? formatInTz(r.rated_datetime, r.rated_timezone, {
@@ -869,7 +1215,7 @@ export default function RatingsPage() {
                       : 'no date'}
                   </p>
                 </td>
-                <td className="max-w-52 px-4 py-3">
+                <td className="sticky left-[14rem] z-10 w-[13rem] min-w-[13rem] max-w-[13rem] border-r border-gray-200 bg-white px-4 py-3 shadow-[6px_0_8px_-6px_rgba(0,0,0,0.10)] group-hover:bg-gray-50">
                   <p className="truncate font-medium">
                     {r.restaurant?.restaurant_name ?? (
                       <span className="text-gray-400 italic">unknown</span>
@@ -950,6 +1296,15 @@ export default function RatingsPage() {
           restaurants={restaurants}
           onClose={() => setEditing(null)}
           onChanged={load}
+          toast={showToast}
+        />
+      )}
+
+      {adding && (
+        <AddRatingModal
+          restaurants={restaurants}
+          onClose={() => setAdding(false)}
+          onCreated={load}
           toast={showToast}
         />
       )}
