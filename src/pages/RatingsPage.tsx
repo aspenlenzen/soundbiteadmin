@@ -907,11 +907,14 @@ export default function RatingsPage() {
 
   const ratedInstant = (r: Rating) => new Date(r.rated_datetime ?? r.created_at).getTime();
 
-  const visible = useMemo(() => {
+  // Rows matching every active filter EXCEPT the level toggles. The stat tiles
+  // and the table build on this; the level-distribution chart reads it directly
+  // so toggling a level never zeros out the other bars — it stays a usable
+  // level picker that reflects the current search/room/user/restaurant/date.
+  const filteredExceptLevel = useMemo(() => {
     if (!ratings) return [];
     const q = search.trim().toLowerCase();
-    const rows = ratings.filter((r) => {
-      if (levelFilter.size && !levelFilter.has(r.sound_rating)) return false;
+    return ratings.filter((r) => {
       if (roomFilter && r.room !== roomFilter) return false;
       if (userFilter && r.user_id !== userFilter) return false;
       if (restaurantFilter && r.google_place_id !== restaurantFilter) return false;
@@ -933,6 +936,12 @@ export default function RatingsPage() {
         .toLowerCase();
       return hay.includes(q);
     });
+  }, [ratings, search, roomFilter, userFilter, restaurantFilter, dateFrom, dateTo, userName]);
+
+  const visible = useMemo(() => {
+    const rows = levelFilter.size
+      ? filteredExceptLevel.filter((r) => levelFilter.has(r.sound_rating))
+      : filteredExceptLevel;
     const cmp: Record<SortKey, (a: Rating, b: Rating) => number> = {
       rated: (a, b) => ratedInstant(a) - ratedInstant(b),
       restaurant: (a, b) =>
@@ -941,19 +950,35 @@ export default function RatingsPage() {
       user: (a, b) =>
         userName(a.user_id).localeCompare(userName(b.user_id)) || ratedInstant(b) - ratedInstant(a),
     };
-    return rows.sort((a, b) => cmp[sort.key](a, b) * sort.dir);
-  }, [ratings, search, roomFilter, userFilter, restaurantFilter, dateFrom, dateTo, levelFilter, sort, userName]);
+    return [...rows].sort((a, b) => cmp[sort.key](a, b) * sort.dir);
+  }, [filteredExceptLevel, levelFilter, sort, userName]);
 
+  // Tiles reflect the fully-filtered rows (visible); the distribution reflects
+  // filteredExceptLevel so the chart keeps all seven bars while filtering.
   const stats = useMemo(() => {
-    if (!ratings || ratings.length === 0) return null;
-    const counts = LEVELS.map((l) => ratings.filter((r) => r.sound_rating === l.rating).length);
-    const total = ratings.length;
-    const avg = ratings.reduce((s, r) => s + r.sound_rating, 0) / total;
-    const places = new Set(ratings.map((r) => r.google_place_id)).size;
-    const topIdx = counts.indexOf(Math.max(...counts));
-    const latest = ratings.reduce((a, b) => (a.created_at > b.created_at ? a : b));
-    return { counts, total, avg, places, top: LEVELS[topIdx], topCount: counts[topIdx], latest };
-  }, [ratings]);
+    const distCounts = LEVELS.map(
+      (l) => filteredExceptLevel.filter((r) => r.sound_rating === l.rating).length,
+    );
+    const rows = visible;
+    if (rows.length === 0) {
+      return {
+        distCounts,
+        total: 0,
+        avg: null as number | null,
+        places: 0,
+        top: null as (typeof LEVELS)[number] | null,
+        topCount: 0,
+        latest: null as Rating | null,
+      };
+    }
+    const total = rows.length;
+    const avg = rows.reduce((s, r) => s + r.sound_rating, 0) / total;
+    const places = new Set(rows.map((r) => r.google_place_id)).size;
+    const vCounts = LEVELS.map((l) => rows.filter((r) => r.sound_rating === l.rating).length);
+    const topIdx = vCounts.indexOf(Math.max(...vCounts));
+    const latest = rows.reduce((a, b) => (a.created_at > b.created_at ? a : b));
+    return { distCounts, total, avg, places, top: LEVELS[topIdx], topCount: vCounts[topIdx], latest };
+  }, [visible, filteredExceptLevel]);
 
   const hasFilters =
     !!search ||
@@ -1049,37 +1074,45 @@ export default function RatingsPage() {
 
   return (
     <div className="space-y-5">
-      {stats && (
+      {ratings.length > 0 && (
         <div className="grid grid-cols-2 gap-4 xl:grid-cols-5">
           <StatTile
             label="Sound Bites"
             value={stats.total}
-            sub={`across ${stats.places} restaurants`}
+            sub={`across ${stats.places} restaurant${stats.places === 1 ? '' : 's'}`}
           />
           <StatTile
             label="Average level"
             value={
-              <span className="flex items-baseline gap-2">
-                {stats.avg.toFixed(1)}
-                <span className="text-sm font-semibold text-gray-500">
-                  {levelFor(Math.round(stats.avg))?.word}
+              stats.avg != null ? (
+                <span className="flex items-baseline gap-2">
+                  {stats.avg.toFixed(1)}
+                  <span className="text-sm font-semibold text-gray-500">
+                    {levelFor(Math.round(stats.avg))?.word}
+                  </span>
                 </span>
-              </span>
+              ) : (
+                '—'
+              )
             }
             sub="1 nearly silent · 7 ear-splitting"
           />
           <StatTile
             label="Most common"
-            value={<LevelBadge rating={stats.top.rating} />}
-            sub={`${stats.topCount} bites`}
+            value={stats.top ? <LevelBadge rating={stats.top.rating} /> : '—'}
+            sub={stats.top ? `${stats.topCount} bites` : 'no matches'}
           />
           <StatTile
             label="Latest bite"
-            value={formatInTz(stats.latest.created_at, null, { month: 'long', day: 'numeric' })}
-            sub={`by ${userName(stats.latest.user_id)}`}
+            value={
+              stats.latest
+                ? formatInTz(stats.latest.created_at, null, { month: 'long', day: 'numeric' })
+                : '—'
+            }
+            sub={stats.latest ? `by ${userName(stats.latest.user_id)}` : 'no matches'}
           />
           <div className="col-span-2 xl:col-span-1">
-            <LevelDistribution counts={stats.counts} active={levelFilter} onToggle={toggleLevel} />
+            <LevelDistribution counts={stats.distCounts} active={levelFilter} onToggle={toggleLevel} />
           </div>
         </div>
       )}
