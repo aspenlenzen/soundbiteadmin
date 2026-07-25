@@ -179,7 +179,7 @@ function Shell() {
 
   return (
     <div className="flex min-h-screen">
-      <aside className="fixed inset-y-0 left-0 flex w-56 flex-col border-r border-gray-200 bg-white">
+      <aside className="hidden fixed inset-y-0 left-0 flex md:flex w-56 flex-col border-r border-gray-200 bg-white">
         <div className="flex items-center gap-2.5 px-5 pt-6 pb-5">
           <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[var(--accent)] text-white">
             <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
@@ -212,7 +212,7 @@ function Shell() {
         </p>
       </aside>
 
-      <div className="ml-56 min-w-0 flex-1">
+      <div className="ml-0 md:ml-56 min-w-0 flex-1">
         <header className="sticky top-0 z-40 flex items-center justify-between border-b border-gray-200 bg-white/90 px-8 py-3.5 backdrop-blur">
           <h1 className="text-lg font-bold">{current.title}</h1>
           <AuthChip />
