@@ -168,6 +168,7 @@ function Placeholder({ title }: { title: string }) {
 
 function Shell() {
   const [page, setPage] = useState(pageFromHash);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
 
   useEffect(() => {
     const onHash = () => setPage(pageFromHash());
@@ -179,7 +180,9 @@ function Shell() {
 
   return (
     <div className="flex min-h-screen">
-      <aside className="hidden fixed inset-y-0 left-0 flex md:flex w-56 flex-col border-r border-gray-200 bg-white">
+      <aside className={`fixed inset-y-0 left-0 flex w-56 flex-col border-r border-gray-200 bg-white transition-transform duration-300 ${
+        sidebarOpen ? 'translate-x-0' : '-translate-x-full'
+      } md:translate-x-0`}>
         <div className="flex items-center gap-2.5 px-5 pt-6 pb-5">
           <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[var(--accent)] text-white">
             <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
@@ -214,7 +217,18 @@ function Shell() {
 
       <div className="ml-0 md:ml-56 min-w-0 flex-1">
         <header className="sticky top-0 z-40 flex items-center justify-between border-b border-gray-200 bg-white/90 px-8 py-3.5 backdrop-blur">
-          <h1 className="text-lg font-bold">{current.title}</h1>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setSidebarOpen(!sidebarOpen)}
+              className="rounded-lg p-1.5 text-gray-600 hover:bg-gray-100 md:hidden"
+              aria-label="Toggle sidebar"
+            >
+              <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <path d="M3 6h18M3 12h18M3 18h18" />
+              </svg>
+            </button>
+            <h1 className="text-lg font-bold">{current.title}</h1>
+          </div>
           <AuthChip />
         </header>
         <main className="px-8 py-6">
