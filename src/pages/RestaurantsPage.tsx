@@ -70,8 +70,10 @@ function EditRestaurantModal({
   const [postal, setPostal] = useState(row.postal_code ?? '');
   const [website, setWebsite] = useState(row.google_website ?? '');
   const [phone, setPhone] = useState(row.google_phone_number ?? '');
+  const [placeId, setPlaceId] = useState(row.google_place_id);
   const [busy, setBusy] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [confirmPlaceId, setConfirmPlaceId] = useState(false);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -94,7 +96,13 @@ function EditRestaurantModal({
       .filter(Boolean)
       .join(', ') || null;
 
+  const placeIdChanged = placeId.trim() !== row.google_place_id;
+
   const save = async () => {
+    if (placeIdChanged && !confirmPlaceId) {
+      setConfirmPlaceId(true);
+      return;
+    }
     setBusy(true);
     const patch = {
       restaurant_name: name.trim() || null,
@@ -107,20 +115,48 @@ function EditRestaurantModal({
       google_phone_number: phone.trim() || null,
       ...(addressChanged ? { full_address: composedAddress } : {}),
     };
-    const { data, error } = await supabase
-      .from('Restaurants db')
-      .update(patch)
-      .eq('google_place_id', row.google_place_id)
-      .select('google_place_id');
-    setBusy(false);
-    if (error) {
-      toast({ kind: 'err', msg: `Save failed: ${error.message}` });
-    } else if (!data?.length) {
-      toast({ kind: 'err', msg: 'Save blocked — only the admin account can edit restaurants.' });
+
+    // google_place_id is the primary key, so if it changed, delete the old row and insert a new one.
+    if (placeIdChanged) {
+      const { error: delError } = await supabase
+        .from('Restaurants db')
+        .delete()
+        .eq('google_place_id', row.google_place_id);
+      if (delError) {
+        setBusy(false);
+        toast({ kind: 'err', msg: `Save failed: ${delError.message}` });
+        return;
+      }
+      const { data, error } = await supabase
+        .from('Restaurants db')
+        .insert({ ...patch, google_place_id: placeId.trim() })
+        .select('google_place_id');
+      setBusy(false);
+      if (error) {
+        toast({ kind: 'err', msg: `Save failed: ${error.message}` });
+      } else if (!data?.length) {
+        toast({ kind: 'err', msg: 'Save blocked — only the admin account can edit restaurants.' });
+      } else {
+        toast({ kind: 'ok', msg: `${name.trim() || 'Restaurant'} updated.` });
+        onChanged();
+        onClose();
+      }
     } else {
-      toast({ kind: 'ok', msg: `${name.trim() || 'Restaurant'} updated.` });
-      onChanged();
-      onClose();
+      const { data, error } = await supabase
+        .from('Restaurants db')
+        .update(patch)
+        .eq('google_place_id', row.google_place_id)
+        .select('google_place_id');
+      setBusy(false);
+      if (error) {
+        toast({ kind: 'err', msg: `Save failed: ${error.message}` });
+      } else if (!data?.length) {
+        toast({ kind: 'err', msg: 'Save blocked — only the admin account can edit restaurants.' });
+      } else {
+        toast({ kind: 'ok', msg: `${name.trim() || 'Restaurant'} updated.` });
+        onChanged();
+        onClose();
+      }
     }
   };
 
@@ -209,8 +245,11 @@ function EditRestaurantModal({
         <div className="space-y-4 px-6 py-5">
           <div className="grid grid-cols-2 gap-4">
             <label className="block text-sm font-semibold text-gray-700">
-              Name
-              <input value={name} disabled={disabled} onChange={(e) => setName(e.target.value)} className={field} />
+              Google Place ID
+              <input value={placeId} disabled={disabled} onChange={(e) => setPlaceId(e.target.value)} className={field} />
+              <span className="mt-1 block text-[11px] font-normal text-gray-400">
+                {placeIdChanged && <span className="text-amber-600">⚠ Changing ID will delete and recreate the row.</span>}
+              </span>
             </label>
             <label className="block text-sm font-semibold text-gray-700">
               Establishment type
@@ -259,7 +298,24 @@ function EditRestaurantModal({
         </div>
 
         <div className="flex items-center justify-between border-t border-gray-100 px-6 py-4">
-          {isAdmin && row.rating_count === 0 ? (
+          {confirmPlaceId ? (
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-medium text-amber-700">Change Place ID to {placeId.trim()}?</span>
+              <button
+                onClick={() => save()}
+                disabled={busy}
+                className="rounded-lg bg-amber-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-amber-700 disabled:opacity-50"
+              >
+                Yes, change
+              </button>
+              <button
+                onClick={() => setConfirmPlaceId(false)}
+                className="rounded-lg px-3 py-1.5 text-sm font-medium text-gray-500 hover:bg-gray-100"
+              >
+                Cancel
+              </button>
+            </div>
+          ) : isAdmin && row.rating_count === 0 ? (
             confirmDelete ? (
               <div className="flex items-center gap-2">
                 <span className="text-sm font-medium text-red-700">Delete forever?</span>
@@ -289,8 +345,8 @@ function EditRestaurantModal({
           ) : (
             <span className="text-[11px] text-gray-400">
               {isAdmin && row.rating_count > 0
-                ? 'Restaurants with Sound Bites can’t be deleted.'
-                : ''}
+                ? ‘Restaurants with Sound Bites can’t be deleted.’
+                : ‘’}
             </span>
           )}
           <div className="flex gap-2">
@@ -298,15 +354,15 @@ function EditRestaurantModal({
               onClick={onClose}
               className="rounded-lg px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100"
             >
-              {isAdmin ? 'Cancel' : 'Close'}
+              {isAdmin ? ‘Cancel’ : ‘Close’}
             </button>
-            {isAdmin && (
+            {isAdmin && !confirmPlaceId && (
               <button
                 onClick={save}
                 disabled={busy}
                 className="rounded-lg bg-[var(--accent)] px-4 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50"
               >
-                {busy ? 'Saving…' : 'Save changes'}
+                {busy ? ‘Saving…’ : ‘Save changes’}
               </button>
             )}
           </div>
